@@ -6,6 +6,7 @@ all:
 
 # create a perl distribution for CPAN
 dist:
+	-make clean
 	perl Makefile.PL
 	-rm -rf sparse-$(PERL_VERSION).tar.gz ../sparse-decpp-$(VERSION).tar.gz src ../perl_dist
 	mkdir -p src/
@@ -15,6 +16,7 @@ dist:
 	echo "src/sparse-decpp-$(VERSION).tar.gz" > ../perl_dist/MANIFEST
 	find lib/                                 >>../perl_dist/MANIFEST
 	find src/                                 >>../perl_dist/MANIFEST
+	find scripts/                             >>../perl_dist/MANIFEST
 	echo "README"                             >>../perl_dist/MANIFEST
 	echo "Makefile.PL"                        >>../perl_dist/MANIFEST
 	echo "sparse.xs"                          >>../perl_dist/MANIFEST
@@ -29,3 +31,8 @@ dist:
 	perl -pi -e "s/-L\.\/\.\./-L\.\/src\/sparse-$(VERSION)/g"               ../perl_dist/Makefile.PL
 	cd ../perl_dist; make dist
 	cp ../perl_dist/sparse-$(PERL_VERSION).tar.gz .
+
+upload: dist
+       if [ -f ../../cpan-upload-do ]; then \
+               ../../cpan-upload-do -verbose sparse-$(PERL_VERSION).tar.gz; \
+       fi

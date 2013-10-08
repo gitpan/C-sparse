@@ -12,10 +12,10 @@ license: unknown
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: 1.4
-name: sparse
+name: C-sparse
 no_index:
   directory:
     - t
     - inc
 requires: {}
-version: 0.01
+version: 0.02
