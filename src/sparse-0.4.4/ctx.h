@@ -7,6 +7,7 @@
 #include "allocate_struct.h"
 #include "token_struct.h"
 #include "scope_struct.h"
+#include "linearize_struct.h"
 
 /* lib.c */
 #ifndef __GNUC__
@@ -58,6 +59,7 @@ typedef struct {
 	struct token **tokenlist;
 	struct token *token;
 	unsigned char *buffer;
+	CString *space;
 } stream_t;
 #define HASHED_INPUT_BITS (6)
 #define HASHED_INPUT (1 << HASHED_INPUT_BITS)
@@ -71,7 +73,30 @@ typedef struct {
 #define ident_hash_add(oldhash,c)	((oldhash)*11 + (c))
 #define ident_hash_end(hash)		((((hash) >> IDENT_HASH_BITS) + (hash)) & IDENT_HASH_MASK)
 
+#define INCLUDEPATHS 300
+#define INSN_HASH_SIZE 256
+
+enum standard_enum { STANDARD_C89,
+       STANDARD_C94,
+       STANDARD_C99,
+       STANDARD_GNU89,
+       STANDARD_GNU99, };
+
 struct sparse_ctx {
+
+	/* pre-process.c */
+	/*static */int false_nesting /*= 0*/;
+	const char *includepath[INCLUDEPATHS+1]/* = {
+	"",
+	"/usr/include",
+	"/usr/local/include",
+	NULL
+	}*/;
+	/*static*/ const char **quote_includepath /*= includepath*/;
+	/*static*/ const char **angle_includepath /*= includepath + 1*/;
+	/*static*/ const char **isys_includepath  /* = includepath + 1*/;
+	/*static*/ const char **sys_includepath  /* = includepath + 1*/;
+	/*static*/ const char **dirafter_includepath /*= includepath + 3*/;
 
 	/* tokenize.c */
 	int input_stream_nr/* = 0*/;
@@ -86,6 +111,7 @@ struct sparse_ctx {
 	/* dissect.c */
 	struct reporter *reporter;
 	/*static*/ struct symbol *return_type;
+        /*static*/ unsigned dotc_stream;
 	
 	/* liveness.c */
 	/*static*/ int liveness_changed;
@@ -115,7 +141,8 @@ struct sparse_ctx {
 	struct symbol_list *function_computed_target_list;
 	struct statement_list *function_computed_goto_list;
 	/* lib.c */
-	int ppnoopt, ppisinit;
+	enum standard_enum standard;
+	int ppnoopt, ppisinit, ppredef;
 	int verbose, optimize, optimize_size, preprocessing;
 	int die_if_error/* = 0*/;
 	int gcc_major /*= __GNUC__*/;
@@ -203,7 +230,12 @@ struct sparse_ctx {
 	
 	/*linearize.c*/
 	/*static*/ struct position current_pos;
-	
+        struct pseudo void_pseudo /* = {}*/;
+
+	/* cse.c */
+	/*static */struct instruction_list *insn_hash_table[INSN_HASH_SIZE];
+	int repeat_phase;
+
 	/*flow-c*/
 	unsigned long bb_generation;
 	
@@ -259,6 +291,7 @@ struct sparse_ctx {
 	ALLOCATOR_DEF(expression, "expressions",0);
 	ALLOCATOR_DEF(statement, "statements",0);
 	ALLOCATOR_DEF(string, "strings",0);
+	ALLOCATOR_DEF(CString, "CStrings",0);
 	ALLOCATOR_DEF(scope, "scopes",0);
 	ALLOCATOR_DEF(bytes, "bytes",0);
 	ALLOCATOR_DEF(basic_block, "basic_block",0);

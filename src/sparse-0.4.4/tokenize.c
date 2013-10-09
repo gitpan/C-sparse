@@ -327,6 +327,11 @@ static struct token * alloc_token_stream(SCTX_ stream_t *stream)
 {
 	struct token *token = __alloc_token(sctx_ 0);
 	token->pos = stream_pos(sctx_ stream);
+	token->space = 0;
+#ifdef DO_CTX
+	token->ctx = sctx;
+#endif
+	token->space = stream->space;
 	return token;
 }
 
@@ -438,6 +443,16 @@ static inline int nextchar(SCTX_ stream_t *stream)
 	return nextchar_slow(sctx_ stream);
 }
 
+static int token_push_space(SCTX_ int c, stream_t *stream) {
+	CString *str;
+	if (!(str = stream->space)) {
+		stream->space = str = __alloc_CString(sctx_ 0);
+		cstr_new(sctx_ str);
+	}
+	cstr_ccat(sctx_ str, c);
+	return 0;
+}
+
 #ifndef DO_CTX
 struct token eof_token_entry;
 #endif
@@ -448,6 +463,7 @@ static struct token *mark_eof(SCTX_ stream_t *stream)
 
 	end = alloc_token_stream(sctx_ stream);
 	token_type(end) = TOKEN_STREAMEND;
+	end->space = 0;
 	end->pos.newline = 1;
 
 	sctxp eof_token_entry.next = &sctxp eof_token_entry;
@@ -466,6 +482,8 @@ static void add_token(SCTX_ stream_t *stream)
 
 	stream->token = NULL;
 	token->next = NULL;
+	token->space = stream->space;
+	stream->space = 0;
 	*stream->tokenlist = token;
 	stream->tokenlist = &token->next;
 }
@@ -530,7 +548,7 @@ static const long cclass[257] = {
 	['?' + 1] = Escape,
 };
 
-/*
+/*x
  * pp-number:
  *	digit
  *	. digit
@@ -659,13 +677,18 @@ static int eat_string(SCTX_ int next, stream_t *stream, enum token_type type)
 
 static int drop_stream_eoln(SCTX_ stream_t *stream)
 {
+	int c;
 	drop_token(sctx_ stream);
 	for (;;) {
-		switch (nextchar(sctx_ stream)) {
+		switch ((c = nextchar(sctx_ stream))) {
 		case EOF:
 			return EOF;
 		case '\n':
+			token_push_space(sctx_ c, stream);
 			return nextchar(sctx_ stream);
+		default:
+			token_push_space(sctx_ c, stream);
+			break;
 		}
 	}
 }
@@ -678,6 +701,7 @@ static int drop_stream_comment(SCTX_ stream_t *stream)
 	newline = stream->newline;
 
 	next = nextchar(sctx_ stream);
+	token_push_space(sctx_ next, stream);
 	for (;;) {
 		int curr = next;
 		if (curr == EOF) {
@@ -685,6 +709,7 @@ static int drop_stream_comment(SCTX_ stream_t *stream)
 			return curr;
 		}
 		next = nextchar(sctx_ stream);
+		token_push_space(sctx_ next, stream);
 		if (curr == '*' && next == '/')
 			break;
 	}
@@ -774,10 +799,15 @@ static int get_one_special(SCTX_ int c, stream_t *stream)
 	case '\'':
 		return eat_string(sctx_ next, stream, TOKEN_CHAR);
 	case '/':
-		if (next == '/')
+		token_push_space(sctx_ c, stream);
+		if (next == '/') {
+			token_push_space(sctx_ next, stream);
 			return drop_stream_eoln(sctx_ stream);
-		if (next == '*')
+		}
+		if (next == '*') {
+			token_push_space(sctx_ next, stream);
 			return drop_stream_comment(sctx_ stream);
+		}
 	}
 
 	/*
@@ -923,6 +953,7 @@ struct token *built_in_token(SCTX_ int stream, const char *name)
 	struct token *token;
 
 	token = __alloc_token(sctx_ 0);
+	token->space = 0;
 	token->pos.stream = stream;
 	token_type(token) = TOKEN_IDENT;
 	token->ident = built_in_ident(sctx_ name);
@@ -995,6 +1026,7 @@ static struct expansion *setup_stream(SCTX_ stream_t *stream, int idx, int fd,
 	stream->newline = 1;
 	stream->whitespace = 0;
 	stream->pos = 0;
+	stream->space = 0;
 
 	stream->token = NULL;
 	stream->fd = fd;
@@ -1012,6 +1044,9 @@ static struct expansion *setup_stream(SCTX_ stream_t *stream, int idx, int fd,
 	/*if (!e)*/ {
 		e = __alloc_expansion(sctx_ 0);
 		memset(e, 0, sizeof(struct expansion));
+#ifdef DO_CTX
+		e->ctx = sctx;
+#endif
 		e->typ = EXPANSION_STREAM;
 		e->s = begin;
 		e->e = &begin->next;
@@ -1034,6 +1069,9 @@ static struct token *tokenize_stream(SCTX_ stream_t *stream)
 			stream->whitespace = 0;
 			c = get_one_token(sctx_ c, stream);
 			continue;
+		}
+		if (sctxp ppnoopt) {
+			token_push_space(sctx_ c, stream);
 		}
 		stream->whitespace = 1;
 		c = nextchar(sctx_ stream);
@@ -1066,6 +1104,9 @@ struct expansion * tokenize(SCTX_ const char *name, int fd, struct token *endtok
 	if (idx < 0) {
 		e = __alloc_expansion(sctx_ 0);
 		memset(e, 0, sizeof(struct expansion));
+#ifdef DO_CTX
+		e->ctx = sctx;
+#endif
 		e->typ = EXPANSION_STREAM;
 		e->s = endtoken;
 		// info(endtoken->pos, "File %s is const", name);
@@ -1076,7 +1117,7 @@ struct expansion * tokenize(SCTX_ const char *name, int fd, struct token *endtok
 	end = tokenize_stream(sctx_ &stream);
 	if (endtoken)
 		end->next = endtoken;
-
+	
 	list_e(sctx_ e->s, e);
 
 	return e;

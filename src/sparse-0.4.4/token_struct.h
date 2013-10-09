@@ -30,7 +30,9 @@ enum constantfile {
   CONSTANT_FILE_YES       // Yes
 };
 
+#ifndef DO_CTX
 extern const char *includepath[];
+#endif
 
 struct stream {
 	int fd, id;
@@ -157,8 +159,16 @@ enum special_token {
 
 struct string {
 	unsigned int length;
+	unsigned int used;
 	char data[];
 };
+
+typedef struct CString {
+    int size; /* size in bytes */
+    void *data; /* either 'char *' or 'nwchar_t *' */
+    int size_allocated;
+    void *data_allocated; /* if non NULL, data has been malloced */
+} CString;
 
 /* will fit into 32 bits */
 struct argcount {
@@ -177,9 +187,11 @@ struct token {
 #ifdef DO_CTX
 	struct sparse_ctx *ctx;
 #endif
+	CString *space;
 	struct position pos;
 	struct token *next;
-	struct expansion *e;
+	struct token *copy;
+	struct expansion *e; /* source or dest expansion */
 	union {
 		const char *number;
 		struct ident *ident;
@@ -201,6 +213,9 @@ enum expansion_typ {
 };
 
 struct expansion {
+#ifdef DO_CTX
+	struct sparse_ctx *ctx;
+#endif
 	int typ;
 	struct token *s, *d, **e;
 	union {

@@ -31,10 +31,12 @@
 #define PUSHTOK(p,v) *p = v; p = &((*p)->next);
 #define PUSHTOKCPY(p,v) *p = dup_one(v); p = &((*p)->next);
 
+#ifndef DO_CTX
+
 static int false_nesting = 0;
 
 #define INCLUDEPATHS 300
-const char *includepath[INCLUDEPATHS+1] = {
+const char *includepath[INCLUDEPATHS+1] = { /* insync with ctx.c */
 	"",
 	"/usr/include",
 	"/usr/local/include",
@@ -46,6 +48,7 @@ static const char **angle_includepath = includepath + 1;
 static const char **isys_includepath   = includepath + 1;
 static const char **sys_includepath   = includepath + 1;
 static const char **dirafter_includepath = includepath + 3;
+#endif
 
 #define dirty_stream(stream)				\
 	do {						\
@@ -80,6 +83,7 @@ static struct token *alloc_token(SCTX_ struct position *pos)
 #ifdef DO_CTX
 	token->ctx = sctx;
 #endif
+	token->space = 0;
 	token->pos.stream = pos->stream;
 	token->pos.line = pos->line;
 	token->pos.pos = pos->pos;
@@ -221,7 +225,7 @@ static struct token *collect_arg(SCTX_ struct token *prev, int vararg, struct po
 			*p = &sctxp eof_token_entry;
 			return next;
 		}
-		if (false_nesting) {
+		if (sctxp false_nesting) {
 			*p = next->next;
 			__free_token(sctx_ next);
 			continue;
@@ -332,6 +336,7 @@ static struct token *dup_one(SCTX_ struct token *tok)
 {
 	struct token *newtok = __alloc_token(sctx_ 0);
 	*newtok = *tok;
+	newtok->copy = tok;
 #ifdef DO_CTX
 	newtok->ctx = sctx;
 #endif
@@ -346,6 +351,7 @@ static struct token *dup_list(SCTX_ struct token *list)
 	while (!eof_token(list)) {
 		struct token *newtok = __alloc_token(sctx_ 0);
 		*newtok = *list;
+		newtok->copy = list;
 #ifdef DO_CTX
 		newtok->ctx = sctx;
 #endif
@@ -398,6 +404,7 @@ static struct token *stringify(SCTX_ struct token *arg)
 
 	memcpy(string->data, s, size);
 	string->length = size;
+	token->space = 0;
 	token->pos = arg->pos;
 	token_type(token) = TOKEN_STRING;
 	token->string = string;
@@ -430,6 +437,9 @@ static void expand_arguments_pp(SCTX_ int count, struct arg *args, struct expans
 			
 			e = __alloc_expansion(sctx_ 0);
 			memset(e, 0, sizeof(struct expansion));
+#ifdef DO_CTX
+			e->ctx = sctx;
+#endif
 			e->typ = EXPANSION_MACROARG;
 			e->s = arg;
 			e->mac = m;
@@ -515,6 +525,9 @@ static int merge(SCTX_ struct token *left, struct token *right)
 
 	e = __alloc_expansion(sctx_ 0);
 	memset(e, 0, sizeof(struct expansion));
+#ifdef DO_CTX
+	e->ctx = sctx;
+#endif
 	e->typ = EXPANSION_CONCAT;
 	e->s = dup_one(sctx_ left);
 	e->s->next = tok = dup_one(sctx_ right); tok->next = NULL;
@@ -578,6 +591,7 @@ static struct token *dup_token(SCTX_ struct token *token, struct position *strea
 	alloc->pos.whitespace = token->pos.whitespace;
 	alloc->number = token->number;
 	alloc->pos.noexpand = token->pos.noexpand;
+	alloc->space = token->space;
 	return alloc;	
 }
 
@@ -745,11 +759,16 @@ static int expand(SCTX_ struct token **list, struct symbol *sym, struct token *m
 	e = __alloc_expansion(sctx_ 0);
 	memset(e, 0, sizeof(struct expansion));
 	e->typ = EXPANSION_MACRO;
+#ifdef DO_CTX
+	e->ctx = sctx;
+#endif
 	e->s = sym->expansion;
 	e->d = dup_list_e(sctx_ sym->expansion, e);
 	e->tok = mtok;
 	e->msym = sym;
-
+	if (mtok->copy)
+		mtok->copy->e = e;
+	
 	if (sym->arglist) {
 		if (!match_op(scan_next(&token->next), '('))
 			goto ret1;
@@ -886,7 +905,7 @@ static void set_stream_include_path(SCTX_ struct stream *stream)
 		}
 		stream->path = path;
 	}
-	includepath[0] = path;
+	sctxp includepath[0] = path;
 }
 
 static int try_include(SCTX_ const char *path, const char *filename, int flen, struct token **where, const char **next_path)
@@ -963,7 +982,7 @@ static int handle_include_path(SCTX_ struct stream *stream, struct token **list,
 
 	/* Absolute path? */
 	if (filename[0] == '/') {
-		if (try_include(sctx_ "", filename, flen, list, includepath))
+		if (try_include(sctx_ "", filename, flen, list, sctxp includepath))
 			return 0;
 		goto out;
 	}
@@ -973,13 +992,13 @@ static int handle_include_path(SCTX_ struct stream *stream, struct token **list,
 		path = stream->next_path;
 		break;
 	case 2:
-		includepath[0] = "";
-		path = includepath;
+		sctxp includepath[0] = "";
+		path = sctxp includepath;
 		break;
 	default:
 		/* Dir of input file is first dir to search for quoted includes */
 		set_stream_include_path(sctx_ stream);
-		path = expect ? angle_includepath : quote_includepath;
+		path = expect ? sctxp angle_includepath : sctxp quote_includepath;
 		break;
 	}
 	/* Check the standard include paths.. */
@@ -1320,6 +1339,7 @@ static struct token *parse_expansion(SCTX_ struct token *expansion, struct token
 	token = alloc_token(sctx_ &expansion->pos);
 	token_type(token) = TOKEN_UNTAINT;
 	token->ident = name;
+	token->space = 0;
 	token->next = *p;
 	*p = token;
 	return expansion;
@@ -1366,7 +1386,7 @@ static int do_handle_define(SCTX_ struct stream *stream, struct token **line, st
 		return 1;
 
 	ret = 1;
-	sym = lookup_symbol(sctx_ name, NS_MACRO | NS_UNDEF);
+	sym = lookup_symbol(sctx_ name, NS_MACRO /*| NS_UNDEF*/);
 	if (sym) {
 		int clean;
 
@@ -1384,11 +1404,11 @@ static int do_handle_define(SCTX_ struct stream *stream, struct token **line, st
 						name->len, name->name);
 				info(sctx_ sym->pos->pos, "this was the original definition");
 			}
-		} else if (clean)
+		} else if (0 && clean)
 			goto out;
 	}
 
-	if (!sym || sym->scope != sctxp file_scope) {
+	if (1 || !sym || sym->scope != sctxp file_scope) {
 		sym = alloc_symbol(sctx_ left, SYM_NODE);
 		bind_symbol(sctx_ sym, name, NS_MACRO);
 		ret = 0;
@@ -1465,12 +1485,12 @@ static int handle_strong_undef(SCTX_ struct stream *stream, struct token **line,
 
 static int preprocessor_if(SCTX_ struct stream *stream, struct token *token, int true_sim)
 {
-	token_type(token) = false_nesting ? TOKEN_SKIP_GROUPS : TOKEN_IF;
+	token_type(token) = sctxp false_nesting ? TOKEN_SKIP_GROUPS : TOKEN_IF;
 	free_preprocessor_line(sctx_ token->next);
 	token->next = stream->top_if;
 	stream->top_if = token;
-	if (false_nesting || true_sim != 1)
-		false_nesting++;
+	if (sctxp false_nesting || true_sim != 1)
+		sctxp false_nesting++;
 	return 0;
 }
 
@@ -1482,7 +1502,7 @@ static int handle_ifdef(SCTX_ struct stream *stream, struct token **line, struct
 		arg = token_defined(sctx_ next);
 	} else {
 		dirty_stream(stream);
-		if (!false_nesting)
+		if (!sctxp false_nesting)
 			sparse_error(sctx_ token->pos, "expected preprocessor identifier");
 		arg = -1;
 	}
@@ -1506,7 +1526,7 @@ static int handle_ifndef(SCTX_ struct stream *stream, struct token **line, struc
 		arg = !token_defined(sctx_ next);
 	} else {
 		dirty_stream(stream);
-		if (!false_nesting)
+		if (!sctxp false_nesting)
 			sparse_error(sctx_ token->pos, "expected preprocessor identifier");
 		arg = -1;
 	}
@@ -1581,7 +1601,7 @@ static int expression_value(SCTX_ struct token **where)
 static int handle_if(SCTX_ struct stream *stream, struct token **line, struct token *token)
 {
 	int value = 0;
-	if (!false_nesting)
+	if (!sctxp false_nesting)
 		value = expression_value(sctx_ &token->next);
 
 	dirty_stream(stream);
@@ -1602,20 +1622,20 @@ static int handle_elif(SCTX_ struct stream * stream, struct token **line, struct
 	if (token_type(top_if) == TOKEN_ELSE) {
 		nesting_error(stream);
 		sparse_error(sctx_ token->pos, "#elif after #else");
-		if (!false_nesting)
-			false_nesting = 1;
+		if (!sctxp false_nesting)
+			sctxp false_nesting = 1;
 		return 1;
 	}
 
 	dirty_stream(stream);
 	if (token_type(top_if) != TOKEN_IF)
 		return 1;
-	if (false_nesting) {
-		false_nesting = 0;
+	if (sctxp false_nesting) {
+		sctxp false_nesting = 0;
 		if (!expression_value(sctx_ &token->next))
-			false_nesting = 1;
+			sctxp false_nesting = 1;
 	} else {
-		false_nesting = 1;
+		sctxp false_nesting = 1;
 		token_type(top_if) = TOKEN_SKIP_GROUPS;
 	}
 	return 1;
@@ -1636,11 +1656,11 @@ static int handle_else(SCTX_ struct stream *stream, struct token **line, struct 
 		nesting_error(stream);
 		sparse_error(sctx_ token->pos, "#else after #else");
 	}
-	if (false_nesting) {
+	if (sctxp false_nesting) {
 		if (token_type(top_if) == TOKEN_IF)
-			false_nesting = 0;
+			sctxp false_nesting = 0;
 	} else {
-		false_nesting = 1;
+		sctxp false_nesting = 1;
 	}
 	token_type(top_if) = TOKEN_ELSE;
 	return 1;
@@ -1655,8 +1675,8 @@ static int handle_endif(SCTX_ struct stream *stream, struct token **line, struct
 		sparse_error(sctx_ token->pos, "unmatched #endif in stream");
 		return 1;
 	}
-	if (false_nesting)
-		false_nesting--;
+	if (sctxp false_nesting)
+		sctxp false_nesting--;
 	stream->top_if = top_if->next;
 	__free_token(sctx_ top_if);
 	return 1;
@@ -1680,37 +1700,37 @@ static int handle_nostdinc(SCTX_ struct stream *stream, struct token **line, str
 	 * Do we have any non-system includes?
 	 * Clear them out if so..
 	 */
-	*sys_includepath = NULL;
+	*(sctxp sys_includepath) = NULL;
 	return 1;
 }
 
-static inline void update_inc_ptrs(const char ***where)
+static inline void update_inc_ptrs(SCTX_ const char ***where)
 {
 
-	if (*where <= dirafter_includepath) {
-		dirafter_includepath++;
+	if (*where <= sctxp dirafter_includepath) {
+		sctxp dirafter_includepath++;
 		/* If this was the entry that we prepend, don't
 		 * rise the lower entries, even if they are at
 		 * the same level. */
-		if (where == &dirafter_includepath)
+		if (where == &sctxp dirafter_includepath)
 			return;
 	}
-	if (*where <= sys_includepath) {
-		sys_includepath++;
-		if (where == &sys_includepath)
+	if (*where <= sctxp sys_includepath) {
+		sctxp sys_includepath++;
+		if (where == &sctxp sys_includepath)
 			return;
 	}
-	if (*where <= isys_includepath) {
-		isys_includepath++;
-		if (where == &isys_includepath)
+	if (*where <= sctxp isys_includepath) {
+		sctxp isys_includepath++;
+		if (where == &sctxp isys_includepath)
 			return;
 	}
 
 	/* angle_includepath is actually never updated, since we
 	 * don't suppport -iquote rught now. May change some day. */
-	if (*where <= angle_includepath) {
-		angle_includepath++;
-		if (where == &angle_includepath)
+	if (*where <= sctxp angle_includepath) {
+		sctxp angle_includepath++;
+		if (where == &sctxp angle_includepath)
 			return;
 	}
 }
@@ -1724,11 +1744,11 @@ static void add_path_entry(SCTX_ struct token *token, const char *path,
 	const char *next;
 
 	/* Need one free entry.. */
-	if (includepath[INCLUDEPATHS-2])
+	if (sctxp includepath[INCLUDEPATHS-2])
 		error_die(sctx_ token->pos, "too many include path entries");
 
 	/* check that this is not a duplicate */
-	dst = includepath;
+	dst = sctxp includepath;
 	while (*dst) {
 		if (strcmp(*dst, path) == 0)
 			return;
@@ -1737,7 +1757,7 @@ static void add_path_entry(SCTX_ struct token *token, const char *path,
 	next = path;
 	dst = *where;
 
-	update_inc_ptrs(where);
+	update_inc_ptrs(sctx_ where);
 
 	/*
 	 * Move them all up starting at dst,
@@ -1761,7 +1781,7 @@ static int handle_add_include(SCTX_ struct stream *stream, struct token **line, 
 			warning(sctx_ token->pos, "expected path string");
 			return 1;
 		}
-		add_path_entry(sctx_ token, token->string->data, &isys_includepath);
+		add_path_entry(sctx_ token, token->string->data, &sctxp isys_includepath);
 	}
 }
 
@@ -1775,7 +1795,7 @@ static int handle_add_isystem(SCTX_ struct stream *stream, struct token **line, 
 			sparse_error(sctx_ token->pos, "expected path string");
 			return 1;
 		}
-		add_path_entry(sctx_ token, token->string->data, &sys_includepath);
+		add_path_entry(sctx_ token, token->string->data, &sctxp sys_includepath);
 	}
 }
 
@@ -1789,17 +1809,17 @@ static int handle_add_system(SCTX_ struct stream *stream, struct token **line, s
 			sparse_error(sctx_ token->pos, "expected path string");
 			return 1;
 		}
-		add_path_entry(sctx_ token, token->string->data, &dirafter_includepath);
+		add_path_entry(sctx_ token, token->string->data, &sctxp dirafter_includepath);
 	}
 }
 
 /* Add to end on includepath list - no pointer updates */
 static void add_dirafter_entry(SCTX_ struct token *token, const char *path)
 {
-	const char **dst = includepath;
+	const char **dst = sctxp includepath;
 
 	/* Need one free entry.. */
-	if (includepath[INCLUDEPATHS-2])
+	if (sctxp includepath[INCLUDEPATHS-2])
 		error_die(sctx_ token->pos, "too many include path entries");
 
 	/* Add to the end */
@@ -1838,8 +1858,8 @@ static int handle_split_include(SCTX_ struct stream *stream, struct token **line
 	 *  In addition, `-I-' inhibits the use of the directory of the current
 	 *  file directory as the first search directory for `#include "FILE"'.
 	 */
-	quote_includepath = includepath+1;
-	angle_includepath = sys_includepath;
+	sctxp quote_includepath = sctxp includepath+1;
+	sctxp angle_includepath = sctxp sys_includepath;
 	return 1;
 }
 
@@ -1928,7 +1948,7 @@ void init_preprocessor(SCTX)
 		return;
 	sctxp ppisinit = 1;
 	
-	s = init_stream(sctx_ "<preprocessor>", -1, includepath);
+	s = init_stream(sctx_ "<preprocessor>", -1, sctxp includepath);
 	stream = s->id;
 
 	for (i = 0; i < ARRAY_SIZE(normal); i++) {
@@ -1958,6 +1978,9 @@ static void handle_preprocessor_line(SCTX_ struct stream *stream, struct token *
 
 	e = __alloc_expansion(sctx_ 0);
 	memset(e, 0, sizeof(struct expansion));
+#ifdef DO_CTX
+	e->ctx = sctx;
+#endif
 	e->typ = EXPANSION_PREPRO;
 	e->s = start;
 	e->d = dup_list_e(sctx_ token,e);
@@ -1978,7 +2001,7 @@ static void handle_preprocessor_line(SCTX_ struct stream *stream, struct token *
 
 	if (is_normal) {
 		dirty_stream(stream);
-		if (false_nesting)
+		if (sctxp false_nesting)
 			goto out;
 	}
 	if (!handler(sctx_ stream, line, token))	/* all set */
@@ -2025,7 +2048,7 @@ static struct token *do_preprocess(SCTX_ struct token **list)
 				nesting_error(stream);
 				sparse_error(sctx_ stream->top_if->pos, "unterminated preprocessor conditional");
 				stream->top_if = NULL;
-				false_nesting = 0;
+				sctxp false_nesting = 0;
 			}
 			if (!stream->dirty)
 				stream->constant = CONSTANT_FILE_YES;
@@ -2037,7 +2060,7 @@ static struct token *do_preprocess(SCTX_ struct token **list)
 
 		default:
 			dirty_stream(stream);
-			if (false_nesting) {
+			if (sctxp false_nesting) {
 				*list = next->next;
 				__free_token(sctx_ next);
 				continue;
@@ -2064,5 +2087,7 @@ struct token * preprocess(SCTX_ struct expansion *e)
 	// clear_expression_alloc();
 	sctxp preprocessing = 0;
 
+	/*printf("e:%p d:%p %p\n",e, e->d, e->d->next);*/
+	
 	return e->d;
 }

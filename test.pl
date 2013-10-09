@@ -29,11 +29,24 @@ $s1 = C::sparse::sparse("t/test.c");
 $s2 = C::sparse::sparse("t/test.c");
 
 print("Files0:\n");
-map { print " ".$_->name."\n" } @files0 = $s0->streams;
-print("\nFiles1:\n");
-map { print " ".$_->name."\n" } @files1 = $s1->streams;
-print("\nFiles2:\n");
-map { print " ".$_->name."\n" } @files1 = $s2->streams;
+map { print " ".$_->name."\n" } (@files0 = $s0->streams);
+my @f = grep { $_->name eq 't/test.c'} @files0;
+$e = $f[0]->e;
+@s = $e->s;
+@d = $e->d;
+print ("Source: ".scalar(@s)."\n");
+print ("Dest  : ".scalar(@d)."\n");
+print ("Source: ".join("",(map { 
+  my $pre = "";
+  if ((my $e = $_->e)) {
+    $pre = ":" if ($e->typ == C::sparse::EXPANSION_MACRO) ;
+  }
+  $pre."[$_]" 
+} (@s)))."\n");
+print ("Dest  : ".join("",(map { "[$_]" } (@d)))."\n");
+
+
+
 
 #while(1) {}
 #foreach my $a (@a) {
