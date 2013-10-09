@@ -3,12 +3,10 @@
 
 #include "ctx.h"
 
-/* Current parsing/evaluation function */
-#ifndef DO_CTX
-extern struct symbol *current_fn;
-#endif
 
 #ifndef DO_CTX
+/* Current parsing/evaluation function */
+extern struct symbol *current_fn;
 /* Abstract types */
 extern struct symbol	int_type,
 			fp_type;
@@ -30,15 +28,18 @@ extern struct symbol	bool_ctype, void_ctype, type_ctype,
 extern struct symbol	zero_int;
 #endif
 
-
+#ifndef DO_CTX
 #define __IDENT(n,str,res) \
 	extern struct ident n
 #include "ident-list.h"
+#endif
 
 #define symbol_is_typename(sym) ((sym)->type == SYM_TYPE)
 
 #ifndef DO_CTX
 extern struct symbol_list *translation_unit_used_list;
+extern struct stream *stream_sc;
+extern struct stream *stream_sb;
 #endif
 
 extern void access_symbol(SCTX_ struct symbol *);

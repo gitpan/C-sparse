@@ -26,6 +26,8 @@
  */
 #ifndef DO_CTX
 struct symbol_list *translation_unit_used_list = NULL;
+struct stream *stream_sc;
+struct stream *stream_sb;
 #endif
 
 /*
@@ -774,19 +776,44 @@ struct symbol	bool_ctype, void_ctype, type_ctype,
 struct symbol	zero_int;
 #endif
 
+#undef  __IDENT
+#ifndef DO_CTX
+
 #define __INIT_IDENT(str, res) { .len = sizeof(str)-1, .name = str, .reserved = res }
 #define __IDENT(n,str,res) \
 	struct ident n  = __INIT_IDENT(str,res)
 
 #include "ident-list.h"
 
-void init_symbols(SCTX)
-{
-	int stream = init_stream(sctx_ "builtin", -1, includepath);
-	struct sym_init *ptr;
+#else
+
+void sparse_ctx_init_symbols(SCTX) {
 
 #define __IDENT(n,str,res) \
+  sctxp n.b.len = sizeof(str)-1; strcpy(sctxp n.b.name,str); sctxp n.b.reserved = res;
+
+#include "ident-list.h"
+}
+
+#endif
+
+void init_symbols(SCTX)
+{
+	struct sym_init *ptr;
+	int stream;
+	
+	sctxp stream_sc = init_stream(sctx_ "<cmdline>", -1, includepath);
+	sctxp stream_sb = init_stream(sctx_ "<builtin>", -1, includepath);
+	stream = sctxp stream_sb->id;
+
+#undef  __IDENT
+#ifndef DO_CTX
+#define __IDENT(n,str,res) \
 	hash_ident(sctx_ &n)
+#else
+#define __IDENT(n,str,res) \
+	hash_ident(sctx_ (struct ident *)& sctxp n)
+#endif
 #include "ident-list.h"
 
 	init_parser(sctx_ stream);
@@ -799,6 +826,8 @@ void init_symbols(SCTX)
 		sym->ctype.modifiers = ptr->modifiers;
 		sym->op = ptr->op;
 	}
+
+
 }
 
 #define MOD_ESIGNED (MOD_SIGNED | MOD_EXPLICITLY_SIGNED)

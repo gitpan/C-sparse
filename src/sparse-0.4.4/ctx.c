@@ -105,6 +105,9 @@ struct sparse_ctx *sparse_ctx_init(struct sparse_ctx *ctx) {
 	ctx-> bits_in_enum = 32;
 	ctx-> enum_alignment = 4;
 
+	/* symbol.c */
+	sparse_ctx_init_symbols(ctx);
+
 	/* parse.c */
 	sparse_ctx_init_parse1(ctx);
 	sparse_ctx_init_parse2(ctx);

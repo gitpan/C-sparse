@@ -9,7 +9,7 @@ use warnings;
 
 our $AUTOLOAD;
 
-our $VERSION = '0.01';
+our $VERSION = '0.03';
 
 require XSLoader;
 
@@ -210,6 +210,8 @@ use C::sparse::sym;
 use C::sparse::stmt;
 use C::sparse::expr;
 use C::sparse::expand;
+use C::sparse::ctx;
+use C::sparse::stream;
 
 
 1;

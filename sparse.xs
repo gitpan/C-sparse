@@ -42,6 +42,7 @@ static const char sparsectype_class[]  = "C::sparse::ctype";
 static const char sparsesymctx_class[]  = "C::sparse::symctx";
 static const char sparsescope_class[]  = "C::sparse::scope";
 static const char sparseexpand_class[]  = "C::sparse::expand";
+static const char sparsestream_class[]  = "C::sparse::stream";
 static HV *sparsectx_class_hv;
 static HV *sparsepos_class_hv;
 static HV *sparsetok_class_hv;
@@ -53,6 +54,7 @@ static HV *sparsectype_class_hv;
 static HV *sparsesymctx_class_hv;
 static HV *sparsescope_class_hv;
 static HV *sparseexpand_class_hv;
+static HV *sparsestream_class_hv;
 static HV *sparsestash;
 
 assert_support (static long sparsectx_count = 0;)
@@ -66,6 +68,7 @@ assert_support (static long sparsectype_count = 0;)
 assert_support (static long sparsesymctx_count = 0;)
 assert_support (static long sparsescope_count = 0;)
 assert_support (static long sparseexpand_count = 0;)
+assert_support (static long sparsestream_count = 0;)
 
 typedef struct token     t_token;
 typedef struct position  t_position;
@@ -81,6 +84,7 @@ typedef struct sym_context*sparsesymctx_t;
 typedef struct ctype      *sparsectype_t;
 typedef struct scope      *sparsescope_t;
 typedef struct expansion  *sparseexpand_t;
+typedef struct stream     *sparsestream_t;
 typedef struct starse_ctx *sparsectx_t;
 typedef struct position  *sparsepos_ptr;
 typedef struct token     *sparsetok_ptr;
@@ -92,6 +96,7 @@ typedef struct sym_context*sparsesymctx_ptr;
 typedef struct ctype      *sparsectype_ptr;
 typedef struct scope      *sparsescope_ptr;
 typedef struct expansion  *sparseexpand_ptr;
+typedef struct stream     *sparsestream_ptr;
 typedef struct sparse_ctx *sparsectx_ptr;
 
 #define SvSPARSE(s,type)  ((type) (long)SvIV((SV*) SvRV(s)))
@@ -105,7 +110,8 @@ typedef struct sparse_ctx *sparsectx_ptr;
 #define SvSPARSE_CTYPE(s)     SvSPARSE(s,sparsectype)
 #define SvSPARSE_SYMCTX(s)    SvSPARSE(s,sparsesymctx)
 #define SvSPARSE_SCOPE(s)     SvSPARSE(s,sparsescope)
-#define SvSPARSE_EXPAND(s)       SvSPARSE(s,sparseexpand)
+#define SvSPARSE_EXPAND(s)    SvSPARSE(s,sparseexpand)
+#define SvSPARSE_STREAM(s)    SvSPARSE(s,sparsestream)
 
 #define SPARSE_ASSUME(x,sv,type)			\
   do {							\
@@ -174,6 +180,7 @@ CREATE_SPARSE(sparsesymctx);
 CREATE_SPARSE(sparsescope);
 CREATE_SPARSE(sparseexpand);
 CREATE_SPARSE(sparsectx);
+CREATE_SPARSE(sparsestream);
 
 static char *token_types_class[] =  {
 	"C::sparse::tok::TOKEN_EOF",
@@ -212,6 +219,7 @@ static SV *bless_tok(sparsetok_t e) {
     if (!e) return &PL_sv_undef;
     return sv_bless (newsv_sparsetok (e), gv_stashpv (token_types_class[token_type(e)],1));
 }
+static SV *bless_sparsetok(sparsetok_t e) { return bless_tok(e); }
 static char *stmt_types_class[] =  {
 	"C::sparse::stmt::STMT_NONE",
 	"C::sparse::stmt::STMT_DECLARATION",
@@ -330,6 +338,12 @@ static SV *bless_expand(sparseexpand_t e) {
 }
 static SV *bless_sparseexpand(sparseexpand_t e) { return bless_expand(e); }
 
+static SV *bless_stream(sparsestream_t e) {
+    if (!e) return &PL_sv_undef;
+    return sv_bless (newsv_sparsestream(e), gv_stashpv ("C::sparse::stream",1));
+}
+static SV *bless_sparsestream(sparsestream_t e) { return bless_stream(e); }
+
 
 static void
 class_or_croak (SV *sv, const char *cl)
@@ -383,6 +397,7 @@ BOOT:
     sparsesymctx_class_hv = gv_stashpv (sparsesymctx_class, 1);
     sparsescope_class_hv = gv_stashpv (sparsescope_class, 1);
     sparseexpand_class_hv = gv_stashpv (sparseexpand_class, 1);
+    sparsestream_class_hv = gv_stashpv (sparsestream_class, 1);
 
 INCLUDE_COMMAND: perl scripts/constdef.pl
 
@@ -399,8 +414,8 @@ hello()
         char *av[3] = {"prog", "test.c", 0};
     CODE:
         printf("Call sparse_main\n");
-	SPARSE_CTX_INIT;
-        sparse_main(sctx_ 2,av);
+	/*SPARSE_CTX_INIT;
+        sparse_main(sctx_ 2,av);*/
 	RETVAL = newSV(0);
     OUTPUT:
 	RETVAL
@@ -424,7 +439,7 @@ sparse(...)
         a = (char **)malloc(sizeof(void *) * (items+2));
 	a[0] = "sparse";
         for (i = 0; i < items; i++) {
-            a[i+1] = SvPV_nolen(ST(i));
+            a[i+1] = strdup(SvPV_nolen(ST(i)));
 	}
         a[items+1] = 0;
 	TRACE(printf("sparse_initialize("));
@@ -434,10 +449,51 @@ sparse(...)
 	TRACE(printf(")\n"));
 	New (SPARSE_MALLOC_ID,  _sctx, 1, struct sparse_ctx);
 	_sctx = sparse_ctx_init( _sctx);
+        _sctx ->ppnoopt = 1;
 	_sctx ->symlist = sparse_initialize(sctx_ items+1, a, &_sctx->filelist);
-	RETVAL = new_sparsectx((sparsectx_t)sctx);
+	FOR_EACH_PTR_NOTAG(_sctx->filelist, file) {
+            concat_symbol_list(sctx_ sparse(sctx_ file), &_sctx ->symlist);
+        } END_FOR_EACH_PTR_NOTAG(file);
+	RETVAL = new_sparsectx((struct starse_ctx*)_sctx);
     OUTPUT:
 	RETVAL	
+
+MODULE = C::sparse   PACKAGE = C::sparse::ctx
+PROTOTYPES: ENABLE
+
+void
+DESTROY (r)
+        sparsectx r
+    PREINIT:
+        struct starse_ctx *c;
+    CODE:
+        c = r->m;
+        /*TRACE (printf ("%s DESTROY %p\n", sparsectx_class, r);fflush(stdout););*/
+        assert_support (sparsectx_count--);
+        TRACE_ACTIVE ();
+
+MODULE = C::sparse   PACKAGE = C::sparse
+PROTOTYPES: ENABLE
+
+void
+streams(p,...)
+	sparsectx p
+    PREINIT:
+    struct token *t; int cnt = 0; SPARSE_CTX_GEN(0); int id = 0; struct stream *s;
+    PPCODE:
+        SPARSE_CTX_SET((struct sparse_ctx *)p->m);
+	while(s = stream_get(sctx_ id)) { 
+	    if (GIMME_V == G_ARRAY) {
+	        EXTEND(SP, 1);
+		PUSHs(bless_stream (s));
+            }
+            id++; cnt++;
+	}
+ 	if (GIMME_V == G_SCALAR) {
+ 	    EXTEND(SP, 1);
+            PUSHs(sv_2mortal(newSViv(cnt)));
+	}
+
 
 #	FOR_EACH_PTR(symlist, sym) {
 #	    EXTEND(SP, 1);
