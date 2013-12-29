@@ -1,6 +1,11 @@
 use ExtUtils::testlib;  
 package C::sparse;
 
+#require Symbol;
+#require Exporter;
+#require DynaLoader;
+#@ISA = qw(Exporter DynaLoader);
+
 use 5.012003;
 use strict;
 use warnings;
@@ -9,7 +14,8 @@ use warnings;
 
 our $AUTOLOAD;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
+#bootstrap C::sparse $VERSION;
 
 require XSLoader;
 
@@ -25,6 +31,7 @@ sub import {
 
     local $Exporter::ExportLevel = 1;
     Exporter::import($pkg,@list);
+    
 }
 
 XSLoader::load('C::sparse', $VERSION);
@@ -139,6 +146,52 @@ sub load_imports {
 	SYM_FOULED
 	SYM_KEYWORD
 	SYM_BAD
+	
+	STMT_NONE       
+	STMT_DECLARATION
+	STMT_EXPRESSION 
+	STMT_COMPOUND   
+	STMT_IF	   
+	STMT_RETURN	   
+	STMT_CASE	   
+	STMT_SWITCH	   
+	STMT_ITERATOR   
+	STMT_LABEL	   
+	STMT_GOTO	   
+	STMT_ASM	   
+	STMT_CONTEXT    
+	STMT_RANGE      
+
+EXPR_VALUE 
+	EXPR_STRING
+	EXPR_SYMBOL
+	EXPR_TYPE
+	EXPR_BINOP
+	EXPR_ASSIGNMENT
+	EXPR_LOGICAL
+	EXPR_DEREF
+	EXPR_PREOP
+	EXPR_POSTOP
+	EXPR_CAST
+	EXPR_FORCE_CAST
+	EXPR_IMPLIED_CAST
+	EXPR_SIZEOF
+	EXPR_ALIGNOF
+	EXPR_PTRSIZEOF
+	EXPR_CONDITIONAL
+	EXPR_SELECT		
+	EXPR_STATEMENT
+	EXPR_CALL
+	EXPR_COMMA
+	EXPR_COMPARE
+	EXPR_LABEL
+	EXPR_INITIALIZER	
+	EXPR_IDENTIFIER	
+	EXPR_INDEX		
+	EXPR_POS		
+	EXPR_FVALUE
+	EXPR_SLICE
+	EXPR_OFFSETOF
 
 	KW_SPECIFIER 	
 	KW_MODIFIER	
@@ -212,9 +265,10 @@ use C::sparse::expr;
 use C::sparse::expand;
 use C::sparse::ctx;
 use C::sparse::stream;
-
+use C::sparse::type;
 
 1;
+
 __END__
 
 =head1 C::sparse
