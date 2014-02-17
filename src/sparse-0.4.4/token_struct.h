@@ -42,7 +42,7 @@ struct stream {
 
 	/* Use these to check for "already parsed" */
 	enum constantfile constant;
-	int dirty, next_stream, once;
+	int dirty, next_stream, once, issys;
 	struct ident *protect;
 	struct token *ifndef;
 	struct token *top_if;
@@ -102,6 +102,7 @@ enum token_type {
 	TOKEN_IF,
 	TOKEN_SKIP_GROUPS,
 	TOKEN_ELSE,
+	TOKEN_CONS
 };
 
 /* Combination tokens */
@@ -178,6 +179,16 @@ struct argcount {
 	unsigned vararg:1;
 };
 
+enum {
+	PUSHDOWN_STACK_PUSH = 0,
+	PUSHDOWN_STACK_PULL = 1,
+};
+
+struct pushdown_stack_op {
+	int type;
+	
+};
+
 /*
  * This is a very common data structure, it should be kept
  * as small as humanly possible. Big (rare) types go as
@@ -191,7 +202,11 @@ struct token {
 	struct position pos;
 	struct token *next;
 	struct token *copy;
-	struct expansion *e; /* source or dest expansion */
+	struct expansion *e; /* src expansion */
+	struct cons *c; /* use to weave cons->up,down list */
+	
+	struct pushdown_stack_op *push, *pop;
+	
 	union {
 		const char *number;
 		struct ident *ident;
@@ -203,21 +218,39 @@ struct token {
 	};
 };
 
+struct cons {
+	struct cons *next; /* save volatile tokenlist */
+	struct token *t;
+	struct expansion *e;
+	struct cons *up, *down; /* chain transitions */
+};
+
+struct token_stack {
+	struct token_stack *n;
+	struct cons *h, **p;
+};
+
 enum expansion_typ {
 	EXPANSION_CMDLINE,
 	EXPANSION_STREAM,
+	EXPANSION_MACRODEF,
+
 	EXPANSION_MACRO,
 	EXPANSION_MACROARG,
 	EXPANSION_CONCAT,
-	EXPANSION_PREPRO
+	EXPANSION_PREPRO,
+	EXPANSION_SUBST
 };
 
+/* pushdown automata transition: p(.,.,s)=>(.,d) */
 struct expansion {
 #ifdef DO_CTX
 	struct sparse_ctx *ctx;
 #endif
 	int typ;
-	struct token *s, *d, **e;
+	struct token *s, *d;
+	struct token **e;
+	struct cons *up, *down;
 	union {
 		struct { /* marg */
 			struct expansion *mac;
@@ -226,8 +259,10 @@ struct expansion {
 			struct symbol *msym;
 			struct token *tok;
 		};
+		struct { /* macrodef */
+			struct symbol *mdefsym;
+		};
 	};
 };
-
 
 #endif

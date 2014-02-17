@@ -14,7 +14,7 @@ use warnings;
 
 our $AUTOLOAD;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 #bootstrap C::sparse $VERSION;
 
 require XSLoader;
@@ -72,6 +72,7 @@ sub load_imports {
 	TOKEN_IF
 	TOKEN_SKIP_GROUPS
 	TOKEN_ELSE
+	TOKEN_CONS
 
 	SPECIAL_BASE
 	SPECIAL_ADD_ASSIGN
@@ -106,10 +107,12 @@ sub load_imports {
 
 	EXPANSION_CMDLINE
 	EXPANSION_STREAM
+        EXPANSION_MACRODEF
 	EXPANSION_MACRO
 	EXPANSION_MACROARG
 	EXPANSION_CONCAT
 	EXPANSION_PREPRO
+	EXPANSION_SUBST
 
         CONSTANT_FILE_MAYBE
         CONSTANT_FILE_IFNDEF
@@ -267,11 +270,14 @@ use C::sparse::ctx;
 use C::sparse::stream;
 use C::sparse::type;
 
+sub p  { return ($_[0],defined($_[0]->{'_p'}) ? $_[0]->{'_p'}->p : ()); } 
+sub id { return defined($_[0]->{'_o'}) ? ${$_[0]->{'_o'}} : 0; }
+
 1;
 
 __END__
 
-=head1 C::sparse
+=head1 NAME
 
 C::sparse - Perl binding to Linux's Sparse
 

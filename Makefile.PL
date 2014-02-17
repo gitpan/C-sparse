@@ -13,7 +13,7 @@ WriteMakefile(
        AUTHOR         => 'Konrad Eisele <eiselekd@gmail.com>') : ()),
     LICENSE  => ['perl','BSD' ],
     LIBS              => ['-L./src/sparse-0.4.4 '], # e.g., '-lm'
-    DEFINE            => '-DGCC_BASE="\"'.$gcc.'\"" ',
+    DEFINE            => '-DGCC_BASE="\"'.$gcc.'\""  -g',
     INC               => '-I. -Isrc/sparse-0.4.4', 
     OBJECT            => 'sparse.o src/sparse-0.4.4/libsparse.a', # link all the C files too
     realclean         => {FILES=> 'const-c.inc const-xs.inc'},

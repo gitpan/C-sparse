@@ -27,7 +27,7 @@
 
 #include "const-c.inc"
 
-#define TRACE(x) x
+#define TRACE(x) 
 #define TRACE_ACTIVE()
 #ifdef NDEBUG
 #define assert_support(x)
@@ -87,11 +87,9 @@ typedef struct token     sparse__tok;
   static type type##_hash[SPARSE_HASHSIZE];				\
 									\
   static type								\
-  hash_##type (type##_t e)						\
+  hash_##type (type##_t e, int h)					\
   {									\
-    type p = 0; unsigned int h = (int) (long)e;				\
-    h = ((h >> 4) ^ (h >> 8) ^ (h >> 12) ^ 0x57a45) & (SPARSE_HASHSIZE-1); \
-    p  =type##_hash[h];							\
+    type p = 0; p  =type##_hash[h];					\
     while (p) {								\
       if (p->m == e)							\
 	return p;							\
@@ -103,8 +101,10 @@ typedef struct token     sparse__tok;
   static type								\
   new_##type (type##_t e)						\
   {									\
-    type p = hash_##type(e);						\
-    /*TRACE (printf ("new %s(%p)\n", type##_class, e));*/		\
+    unsigned int h = (int) (long)e;					\
+    h = ((h >> 4) ^ (h >> 8) ^ (h >> 12) ^ 0x57a45) & (SPARSE_HASHSIZE-1); \
+    type p = hash_##type(e,h);						\
+    TRACE (printf ("new %s(%p=>%p)\n", type##_class, e, p));		\
     if (!p) {								\
       if (type##_freelist != NULL)					\
 	{								\
@@ -115,9 +115,12 @@ typedef struct token     sparse__tok;
 	{								\
 	  New (SPARSE_MALLOC_ID, p, 1, struct type##_elem);		\
         }								\
+      p->next = type##_hash[h]; 					\
+      type##_hash[h] = p; 						\
       p->m = e;/*TRACE (printf ("  p=%p\n", p));*/			\
       assert_support (type##_count++);					\
     }									\
+    TRACE (printf (" =>%p\n", p));					\
     TRACE_ACTIVE ();							\
     return p;								\
   }									\
@@ -177,6 +180,7 @@ static char *token_types_class[] =  {
 	"C::sparse::tok::TOKEN_IF",
 	"C::sparse::tok::TOKEN_SKIP_GROUPS",
 	"C::sparse::tok::TOKEN_ELSE",
+	"C::sparse::tok::TOKEN_CONS",
 	0
 };
 static SV *bless_tok(sparsetok_t e) {
@@ -294,7 +298,7 @@ static char *expand_types_class[] =  {
 	"C::sparse::expand::EXPANSION_MACRO",
 	"C::sparse::expand::EXPANSION_MACROARG",
 	"C::sparse::expand::EXPANSION_CONCAT",
-	"C::sparse::expand::EXPANSION_PREPRO",
+	"C::sparse::expand::EXPANSION_SUBST",
 };
 static SV *bless_expand(sparseexpand_t e) {
     if (!e) return &PL_sv_undef;
@@ -505,11 +509,14 @@ void
 list(p,...)
 	sparsetok p
     PREINIT:
-    struct token *t; int cnt = 0; SPARSE_CTX_GEN(0);
+    struct token *t, *e = 0; int cnt = 0; SPARSE_CTX_GEN(0); sparsetok _e;
     PPCODE:
 	t = p->m;
         SPARSE_CTX_SET(t->ctx);
-        while(!eof_token(t)) {
+	if (items >= 2 && sv_derived_from (ST(1), sparsetok_class)) {
+	        _e = SvSPARSE_TOK(ST(1)); e = _e->m;
+	}
+        while(t != e && !eof_token(t)) {
 	        cnt++;
  	    	if (GIMME_V == G_ARRAY) {
 		   EXTEND(SP, 1);
@@ -520,6 +527,22 @@ list(p,...)
  	if (GIMME_V == G_SCALAR) {
  	    EXTEND(SP, 1);
             PUSHs(sv_2mortal(newSViv(cnt)));
+	}
+
+void
+fold(p,...)
+	sparsetok p
+    PREINIT:
+    struct token *t, *e = 0; int cnt = 0; SPARSE_CTX_GEN(0); sparsetok _e;
+    PPCODE:
+	t = p->m;
+        SPARSE_CTX_SET(t->ctx);
+	if (items >= 2 && sv_derived_from (ST(1), sparsetok_class)) {
+	        _e = SvSPARSE_TOK(ST(1)); e = _e->m;
+	}
+        while(t != e && !eof_token(t)) {
+	        cnt++;
+ 		t = t->next;
 	}
 
 void
@@ -549,7 +572,7 @@ name(i)
     PREINIT:
         int len = 0;
     CODE:
-        RETVAL = newSVpv(i->m->name,i->m->len);
+        RETVAL = newSVpv(i->m ? i->m->name : "<undef>",i->m ? i->m->len : 7);
     OUTPUT:
 	RETVAL
 
@@ -569,16 +592,16 @@ name(s)
     OUTPUT:
 	RETVAL
 
-MODULE = C::sparse   PACKAGE = C::sparse::ctype
+MODULE = C::sparse   PACKAGE = C::sparse::sym
 PROTOTYPES: ENABLE
 
 SV *
-name(s)
-	sparsectype s
+id(s)
+	sparsesym s
     PREINIT:
         int len = 0; const char *n; struct symbol *sym;
     CODE:
-	if (!s->m || ! (sym = s->m->base_type))
+	if (!s->m || ! (sym = s->m))
 	   XSRETURN_UNDEF;
 	n = builtin_typename(sym->ctx,sym) ?: show_ident(sym->ctx,sym->ident);
         RETVAL = newSVpv(n,0);
@@ -587,11 +610,11 @@ name(s)
 
 SV *
 typename(s)
-	sparsectype s
+	sparsesym s
     PREINIT:
         int len = 0; const char *n; struct symbol *sym;
     CODE:
-	if (!s->m || ! (sym = s->m->base_type))
+	if (!s->m || ! (sym = s->m))
 	   XSRETURN_UNDEF;
 	n = show_typename_fn(sym->ctx,sym);
         RETVAL = newSVpv(n,0);

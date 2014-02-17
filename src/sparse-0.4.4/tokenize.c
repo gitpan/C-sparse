@@ -70,6 +70,11 @@ static struct position stream_pos(SCTX_ stream_t *stream)
 	return pos;
 }
 
+int stream_issys(stream_t *stream)
+{
+	return 0;
+}
+
 const char *show_special(SCTX_ int val)
 {
 	static char buffer[4];
@@ -225,6 +230,10 @@ const char *show_token(SCTX_ const struct token *token)
 		sprintf(buffer, "<argcnt>");
 		return buffer;
 
+	case TOKEN_CONS:
+		sprintf(buffer, "<cons>");
+		return buffer;
+
 	default:
 		sprintf(buffer, "unhandled token type '%d' ", token_type(token));
 		return buffer;
@@ -313,6 +322,7 @@ struct stream *init_stream(SCTX_ const char *name, int fd, const char **next_pat
 	current->name = name;
 	current->fd = fd;
 	current->next_path = next_path;
+	current->issys = ppre_issys(sctx_ next_path);
 	current->path = NULL;
 	current->constant = CONSTANT_FILE_MAYBE;
 	sctxp input_stream_nr = stream+1;
@@ -1042,12 +1052,7 @@ static struct expansion *setup_stream(SCTX_ stream_t *stream, int idx, int fd,
 		e = sctxp input_streams[idx].e;
 
 	/*if (!e)*/ {
-		e = __alloc_expansion(sctx_ 0);
-		memset(e, 0, sizeof(struct expansion));
-#ifdef DO_CTX
-		e->ctx = sctx;
-#endif
-		e->typ = EXPANSION_STREAM;
+		e = expansion_new(sctx_ EXPANSION_STREAM);
 		e->s = begin;
 		e->e = &begin->next;
 	}
@@ -1088,7 +1093,7 @@ struct expansion * tokenize_buffer(SCTX_ void *buffer, unsigned idx, unsigned lo
 	e = setup_stream(sctx_ &stream, idx, -1, buffer, size);
 	*endtoken = tokenize_stream(sctx_ &stream);
 	
-	list_e(sctx_ e->s, e);
+	list_e(sctx_ e->s, 0, e);
 	return e;
 }
 
@@ -1102,12 +1107,8 @@ struct expansion * tokenize(SCTX_ const char *name, int fd, struct token *endtok
 	s = init_stream(sctx_ name, fd, next_path);
 	idx = s->id;
 	if (idx < 0) {
-		e = __alloc_expansion(sctx_ 0);
-		memset(e, 0, sizeof(struct expansion));
-#ifdef DO_CTX
-		e->ctx = sctx;
-#endif
-		e->typ = EXPANSION_STREAM;
+		e = expansion_new(sctx_ EXPANSION_STREAM);
+
 		e->s = endtoken;
 		// info(endtoken->pos, "File %s is const", name);
 		return e;
@@ -1118,7 +1119,7 @@ struct expansion * tokenize(SCTX_ const char *name, int fd, struct token *endtok
 	if (endtoken)
 		end->next = endtoken;
 	
-	list_e(sctx_ e->s, e);
+	list_e(sctx_ e->s, 0, e);
 
 	return e;
 }
